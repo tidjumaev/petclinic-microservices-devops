@@ -14,17 +14,17 @@
   <repositories>
     <repository>
       <id>gitlab-maven</id>
-      <url>http://localhost/api/v4/projects/6/packages/maven</url>
+      <url>http://35.224.199.26/api/v4/projects/2/packages/maven</url>
     </repository>
   </repositories>
   <distributionManagement>
     <repository>
       <id>gitlab-maven</id>
-      <url>http://localhost/api/v4/projects/6/packages/maven</url>
+      <url>http://35.224.199.26/api/v4/projects/2/packages/maven</url>
     </repository>
     <snapshotRepository>
       <id>gitlab-maven</id>
-      <url>http://localhost/api/v4/projects/6/packages/maven</url>
+      <url>http://35.224.199.26/api/v4/projects/2/packages/maven</url>
     </snapshotRepository>
   </distributionManagement>
   <dependencies>
@@ -35,16 +35,4 @@
       <scope>test</scope>
     </dependency>
   </dependencies>
-  <distributionManagement>
-    <repository>
-        <id>central</id>
-        <name>localhost-releases</name>
-        <url>${env.MAVEN_REPO_URL}/libs-release-local</url>
-    </repository>
-    <snapshotRepository>
-        <id>snapshots</id>
-        <name>localhost-snapshots</name>
-        <url>${env.MAVEN_REPO_URL}/libs-release-local</url>
-    </snapshotRepository>
-</distributionManagement>
 </project>

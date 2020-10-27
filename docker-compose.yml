@@ -1,32 +1,111 @@
-version: '3'
+version: "3"
+
+volumes:
+  config:
+  logs:
+  data:
+  runner_config:
+  artifactory_data:
+
+networks:
+  # Join the same network as the reverse proxy from a parallel docker compose.
+  # See also https://stackoverflow.com/a/38089080/11477374
+  # The part before the first underscore of the network name is the parallel
+  # docker-compose project name, which defaults to the directory name.
+    proxy_proxy_default:
+      external: true
+
+        
+    
+
 services:
-  gitlab:
-    image: gitlab/gitlab-ce:latest
-    container_name: gitlab
-    restart: always
-    hostname: 'gitlab.example.com'
+  web:
+    # GitLab Community Edition is same as GitLab Enterprise Edition Core,
+    # but fully open source.
+    image: gitlab/gitlab-ce
+    restart: unless-stopped
     environment:
+      VIRTUAL_HOST: ${VIRTUAL_HOST}
+      LETSENCRYPT_HOST: ${VIRTUAL_HOST}
+      TZ: ${TZ}
+      # The `GITLAB_OMNIBUS_CONFIG` holds config settings. It would be nicer to have it
+      # in its own file, but having it here helps with keeping the config DRY, using the
+      # `.env` file.
+      #
+      # This instance runs behind a reverse proxy.
+      # The `gitlab/gitlab-ce` image contains its own proxy and SSL setup.
+      # That is amazing, but not what is required for this setup.
+      # To disable it, see:
+      # https://docs.gitlab.com/omnibus/settings/nginx.html#supporting-proxied-ssl
+      # There, it says to keep the 'https' part of `external_url`, however I had to
+      # play around with that a bit, see also:
+      # https://forum.gitlab.com/t/gitlab-redirecting-to-https-although-it-is-disabled/18616
+      # https://forum.gitlab.com/t/gitlab-using-docker-compose-behind-a-nginx-reverse-proxy/26148
+      #
+      # For SMTP config, see:
+      # https://docs.gitlab.com/omnibus/settings/smtp.html#fastmail
       GITLAB_OMNIBUS_CONFIG: |
-        external_url 'http://localhost'
+        external_url 'http://${VIRTUAL_HOST}'
         letsencrypt['enable'] = false
+        nginx['listen_port'] = 80
+        nginx['listen_https'] = false
+        gitlab_rails['initial_root_password'] = '${INITIAL_ROOT_PASSWORD}'
+        gitlab_rails['initial_shared_runners_registration_token'] = "${INITIAL_RUNNER_TOKEN}"
     ports:
       - 80:80
-      - 443:443
-      - 22:22
     networks:
-      - gitlab-network
+      - default
+      #- gitlab-ci_default
+      - proxy_proxy_default
     volumes:
-      - '$GITLAB_HOME/config:/etc/gitlab'
-      - '$GITLAB_HOME/logs:/var/log/gitlab'
-      - '$GITLAB_HOME/data:/var/opt/gitlab'
+      - config:/etc/gitlab
+      - logs:/var/log/gitlab
+      - data:/var/opt/gitlab
 
+
+  runner:
+    image: gitlab/gitlab-runner
+    depends_on:
+      - web
+      - runner_registration
+    environment:
+      - TZ
+    networks:
+      - default
+      - proxy_proxy_default
+    volumes:
+      # Give access to Docker for runner to execute jobs.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - runner_config:/etc/gitlab-runner
+    
+    
+  runner_registration:
+    # This will register the runner with the GitLab instance, providing a config file
+    # for the actual runner to read from. After the config file is created, this service
+    # exits.
+    # Note that this process may add the same runner over and over across docker-compose
+    # restarts. This does not seem to be a problem.
+    build:
+      context: ./runner
+    image: gitlab/gitlab-runner:register
+    networks:
+      - default
+      - proxy_proxy_default
+    environment:
+      - VIRTUAL_HOST
+      - INITIAL_RUNNER_TOKEN
+    depends_on:
+      - web
+    volumes:
+      - runner_config:/etc/gitlab-runner
+  
   artifactory:
     image: docker.bintray.io/jfrog/artifactory-oss:6.23.0
     container_name: artifactory
     ports:
      - 81:8081
     volumes:
-     - $ARTIFACTORY_HOME/data/artifactory:/var/opt/jfrog/artifactory
+     - artifactory_data:/var/opt/jfrog/artifactory
     #    Add extra Java options by uncommenting the following lines
     #    environment:
     #     - EXTRA_JAVA_OPTIONS=-Xms512m -Xmx4g
@@ -37,82 +116,5 @@ services:
         soft: 32000
         hard: 40000
     networks:
-     - gitlab-network
-    
-
-networks:
-  gitlab-network:
-    driver: bridge
-
-
-
-
-# web:
-#   image: 'gitlab/gitlab-ce:latest'
-#   restart: always
-#   hostname: 'gitlab.example.com'
-#   environment:
-#     GITLAB_OMNIBUS_CONFIG: |
-#       external_url 'https://gitlab.example.com'
-#       # Add any other gitlab.rb configuration here, each on its own line
-#   ports:
-#     - '80:80'
-#     - '443:443'
-#     - '22:22'
-#   volumes:
-#     - '$GITLAB_HOME/config:/etc/gitlab'
-#     - '$GITLAB_HOME/logs:/var/log/gitlab'
-#     - '$GITLAB_HOME/data:/var/opt/gitlab'
-
-# version: '3'
-# services:
-#   gitlab:
-#     image: gitlab/gitlab-ce:latest
-#     container_name: "gitlab"
-#     restart: always
-#     hostname: 'localhost'
-#     environment:
-#       GITLAB_OMNIBUS_CONFIG: |
-#         external_url 'http://localhost'
-#         unicorn['worker_timeout'] = 120
-#         unicorn['worker_processes'] = 2
-#     ports:
-#       - 80:80
-#       - 443:443
-#       - 22:22
-#     networks:
-#       - front-tier
-#     volumes:
-#       - ./gitlab/config:/etc/gitlab
-#       - ./gitlab/logs:/var/log/gitlab
-#       - ./gitlab/data:/var/opt/gitlab
-  
-  # gitlab-runner:
-  #   image: gitlab/gitlab-runner:alpine
-  #   container_name: "gitlab-runner"
-  #   restart: always
-  #   depends_on:
-  #     - gitlab
-  #   volumes:
-  #     - ./config/gitlab-runner:/etc/gitlab-runner
-  #     - /var/run/docker.sock:/var/run/docker.sock
-  #   networks:
-  #     - front-tier
-  
-  # artifactory:
-  #   image: docker.bintray.io/jfrog/artifactory-pro:latest
-  #   container_name: "artifactory"
-  #   restart: always
-  #   hostname: 'localhost'
-  #   ports:
-  #     - 8082:8082
-  #     - 8081:8081
-  #   networks:
-  #     - front-tier
-  #   volumes:
-  #     - ./artifactory:/var/opt/jfrog/artifactory
-    
-
-# networks:
-#   front-tier:
-#     driver: bridge
+      - default
+      - proxy_proxy_default
