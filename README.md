@@ -1,5 +1,3 @@
-# petclinic-microservices-devops
-
 # GITLAB + GITLAB RUNNER + ARTIFACTORY
 
 **BUILDING INFRASTRUCTURE**
